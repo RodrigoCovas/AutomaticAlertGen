@@ -2,7 +2,6 @@ import os
 from datasets import load_dataset, load_from_disk
 from transformers import pipeline
 from tqdm import tqdm
-import matplotlib.pyplot as plt
 
 # Define the path to save/load the dataset
 dataset_path = "data/conll2003_dataset"
@@ -30,7 +29,7 @@ else:
     sentiment_analyzer = pipeline("sentiment-analysis", model="distilbert-base-uncased-finetuned-sst-2-english")
 
     # Define a custom sentiment analysis function with a threshold for neutrality
-    def custom_sentiment_analysis(sentiment_analyzer, sentence, neutral_threshold=0.7):
+    def custom_sentiment_analysis(sentiment_analyzer, sentence, neutral_threshold=0.95):
         result = sentiment_analyzer(sentence)[0]  # Get the prediction
         label = result["label"]
         score = result["score"]
@@ -42,10 +41,10 @@ else:
         return {"label": label, "score": score}
 
     # Analyze sentiments with a progress bar and apply custom logic
-    def analyze_with_progress(sentences, sentiment_analyzer, neutral_threshold=0.7):
+    def analyze_with_progress(sentences, sentiment_analyzer):
         sentiments = []
         for sentence in tqdm(sentences, desc="Analyzing Sentiments"):
-            sentiments.append(custom_sentiment_analysis(sentiment_analyzer, sentence, neutral_threshold))
+            sentiments.append(custom_sentiment_analysis(sentiment_analyzer, sentence))
         return sentiments
 
     train_sentiments = analyze_with_progress(train_sentences, sentiment_analyzer)
@@ -81,3 +80,18 @@ test_dataset = dataset["test"].with_format("torch")
 print(train_dataset)
 print(val_dataset)
 print(test_dataset)
+
+c = 0
+p = 0
+n = 0
+for i in dataset["train"]:
+    if i["scores"] < 0.955:
+        c+=1
+    elif i["sentiments"] == "POSITIVE":
+        p += 1
+    elif i["sentiments"] == "NEGATIVE":
+        n += 1
+
+print(c/len(dataset["train"]))
+print(p/len(dataset["train"]))
+print(n/len(dataset["train"]))
