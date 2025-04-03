@@ -1,7 +1,7 @@
 # AutomaticAlertGen
 
 ## Proyecto Deep+NLP 
-Javier Ahumada, Rodrigo Covas, Javier Escobar, Marcos Garrido 
+Rodrigo Covas, Mario Alonso, Marcos Garrido 
 
 ### Componentes del Modelo 
 #### Reconocimiento de Entidades Nombradas (NER): 
