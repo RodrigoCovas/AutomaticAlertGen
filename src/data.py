@@ -49,10 +49,24 @@ else:
 
     # Analyze sentiments with a progress bar and apply custom logic
     def analyze_with_progress(sentences, sentiment_analyzer):
-        sentiments = []
+
+        sentiments:list[dict] = [[], [], []]
         for sentence in tqdm(sentences, desc="Analyzing Sentiments"):
-            sentiments.append(custom_sentiment_analysis(sentiment_analyzer, sentence))
-        return sentiments
+            s = custom_sentiment_analysis(sentiment_analyzer, sentence)
+            sentiments[s["label"]].append(s)
+            
+        # Since the dataset is imbalanced (there are more positive
+        # entries), We will eliminate part of the positive reviews,
+        # so that they are equal in number to the negative ones.
+        # (Prioritizing removing those with low score).
+        if len(sentiments[0]) > len(sentiments[2]):
+            sentiments[0] = sorted(
+                    sentiments[0],
+                    key=lambda x: x['score'], 
+                    reverse=True
+                )[:len(sentiments[2])]
+
+        return [s for l in sentiments for s in l]
 
     train_sentiments = analyze_with_progress(train_sentences, sentiment_analyzer)
     validation_sentiments = analyze_with_progress(
