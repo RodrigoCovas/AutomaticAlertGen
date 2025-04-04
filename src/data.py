@@ -3,6 +3,8 @@ from datasets import load_dataset, load_from_disk
 from transformers import pipeline
 from tqdm import tqdm
 from transformers import BertTokenizer
+from torch.nn.utils.rnn import pad_sequence
+import torch
 
 # Define the path to save/load the dataset
 dataset_path = "data/conll2003_dataset"
@@ -104,7 +106,7 @@ else:
         # Initialize lists for subtokens and propagated labels
         list_tokens = []
         list_labels = []
-
+        token_lengths = []
         # Process each sentence (words + labels)
         for words, word_labels in tqdm(zip(group_words, group_labels), total=len(group_words), desc=f"Processing {dataset_name}"):
             if len(words) != len(word_labels):
@@ -122,10 +124,15 @@ else:
             
             list_tokens.append(tokens)
             list_labels.append(labels)
+            token_lengths.append(len(tokens))
+
+        padded_tokens = pad_sequence(list_tokens, batch_first=True, padding_value=tokenizer.pad_token_id)
+        padded_labels = pad_sequence(list_labels, batch_first=True, padding_value=-1)
         
         processed_dataset[dataset_name] = {
-            "tokens": list_tokens,
-            "ner_tags": list_labels
+            "tokens": padded_tokens,
+            "ner_tags": padded_labels,
+            "lengths": torch.tensor(token_lengths)
         }
     
     # Save the modified dataset to a directory on disk
