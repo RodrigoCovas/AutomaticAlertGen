@@ -6,10 +6,7 @@ tokenizer = BertTokenizerFast.from_pretrained('bert-base-cased')
 model = BertModel.from_pretrained('bert-base-cased')
 
 # Ejemplo de tokens pre-segmentados
-tokens = ["Um", "dia", "um", "macaco", "se", "casou", "com", "a", "borboleta", ",", 
-          "nasceu", "um", "barbolecaco", "e", "uma", "macacoleta", ",", 
-          "que", "confusão", ",", "que", "confusão", ",", 
-          "cabeça", "de", "cachorro", "com", "asas", "de", "dragão"]
+tokens = ['EU', 'rejects', 'German', 'call', 'to', 'boycott', 'British', 'lamb', '.']
 
 # Tokenizar respetando la segmentación original, incluyendo el offset_mapping
 inputs = tokenizer(tokens, is_split_into_words=True, return_tensors='pt', return_offsets_mapping=True)
