@@ -102,6 +102,7 @@ else:
     for dataset_name in datasets_names:
         group_words = dataset[dataset_name]["tokens"]
         group_labels = dataset[dataset_name]["ner_tags"]
+        group_sentiments = dataset[dataset_name]["sentiments"]
 
         # Initialize lists for subtokens and propagated labels
         list_tokens = []
@@ -132,7 +133,8 @@ else:
         processed_dataset[dataset_name] = {
             "tokens": padded_tokens,
             "ner_tags": padded_labels,
-            "lengths": torch.tensor(token_lengths)
+            "lengths": torch.tensor(token_lengths),
+            "sentiments": torch.tensor(group_sentiments)
         }
     
     # Save the modified dataset to a directory on disk
