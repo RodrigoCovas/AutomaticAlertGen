@@ -39,7 +39,11 @@ else:
 
         # Apply threshold logic
         if score < neutral_threshold:
-            label = "NEUTRAL"
+            label = 1
+        elif label == "POSITIVE":
+            label = 0
+        elif label == "NEGATIVE":
+            label = 2
 
         return {"label": label, "score": score}
 
