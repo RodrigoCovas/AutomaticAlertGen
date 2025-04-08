@@ -2,7 +2,7 @@ import os
 from datasets import load_dataset, load_from_disk
 from transformers import pipeline
 from tqdm import tqdm
-from transformers import BertTokenizerFast, BertModel
+from transformers import BertTokenizer
 from torch.nn.utils.rnn import pad_sequence
 import torch
 
@@ -50,47 +50,56 @@ else:
         return {"label": label, "score": score}
 
     # Analyze sentiments with a progress bar and apply custom logic
-    def analyze_with_progress(sentences, sentiment_analyzer):
-        sentiments = []
+    def analyze_with_progress(sentences, sentiment_analyzer) -> list[dict]:
+
+        sentiments:list[dict] = [[], [], []]
         for sentence in tqdm(sentences, desc="Analyzing Sentiments"):
             s = custom_sentiment_analysis(sentiment_analyzer, sentence)
-            sentiments.append(s)  # Keep one sentiment per sentence
+            s['sentence'] = sentence # Saving the original sentence in s so as to retrieve it later
+            sentiments[s["label"]].append(s)
+            
+        # Since the dataset is imbalanced (there are more positive
+        # entries), We will eliminate part of the positive reviews,
+        # so that they are equal in number to the negative ones.
+        # (Prioritizing removing those with low score).
+        if len(sentiments[0]) > len(sentiments[2]):
+            sentiments[0] = sorted(
+                    sentiments[0],
+                    key=lambda x: x['score'], 
+                    reverse=True
+                )[:len(sentiments[2])]
 
-        # Optional: Balance without removing entries
-        if len([s for s in sentiments if s["label"] == 0]) > len([s for s in sentiments if s["label"] == 2]):
-            positive_sentiments = [s for s in sentiments if s["label"] == 0]
-            neutral_sentiments = sorted(positive_sentiments, key=lambda x: x['score'], reverse=True)[len([s for s in sentiments if s["label"] == 2]):]
-            for s in neutral_sentiments:
-                s["label"] = 1
+        sentiments = [s for l in sentiments for s in l]
+        filtered_sentences = [s['sentence'] for s in sentiments]
+        return sentiments, filtered_sentences
 
-        return sentiments
+    train_sentiments, train_sentences = analyze_with_progress(train_sentences, sentiment_analyzer)
+    validation_sentiments, validation_sentences = analyze_with_progress(
+        validation_sentences, sentiment_analyzer
+    )
+    test_sentiments, test_sentences = analyze_with_progress(test_sentences, sentiment_analyzer)
 
     # Add sentiments and scores to the dataset
     def add_sentiments(dataset_split, sentiments):
-        if len(dataset_split) != len(sentiments):
-            raise ValueError(f"Length mismatch: dataset_split has {len(dataset_split)} rows but sentiments has {len(sentiments)} entries.")
-        
+        # Add 'sentiments' column with labels (e.g., "POSITIVE", "NEGATIVE", or "NEUTRAL")
         labels = [result["label"] for result in sentiments]
+        # Add 'scores' column with confidence scores
         scores = [result["score"] for result in sentiments]
 
+        # breakpoint
+        
+        # Add both columns to the dataset split
         dataset_split = dataset_split.add_column("sentiments", labels)
         dataset_split = dataset_split.add_column("scores", scores)
 
         return dataset_split
 
-    # Process train, validation, and test datasets
-    train_sentiments = analyze_with_progress(train_sentences, sentiment_analyzer)
-    validation_sentiments = analyze_with_progress(validation_sentences, sentiment_analyzer)
-    test_sentiments = analyze_with_progress(test_sentences, sentiment_analyzer)
-
     dataset["train"] = add_sentiments(dataset["train"], train_sentiments)
     dataset["validation"] = add_sentiments(dataset["validation"], validation_sentiments)
     dataset["test"] = add_sentiments(dataset["test"], test_sentiments)
 
-
     # Initialize BERT tokenizer
-    tokenizer = BertTokenizerFast.from_pretrained("bert-base-uncased")
-    model_embeddings = BertModel.from_pretrained('bert-base-cased')
+    tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
 
     datasets_names = ["train", "validation", "test"]
     processed_dataset = {}
