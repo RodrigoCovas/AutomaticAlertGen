@@ -2,7 +2,7 @@ import os
 from datasets import load_dataset, load_from_disk
 from transformers import pipeline
 from tqdm import tqdm
-from transformers import BertTokenizer
+from transformers import BertTokenizer, BertModel
 from torch.nn.utils.rnn import pad_sequence
 import torch
 
@@ -56,6 +56,7 @@ else:
         for sentence in tqdm(sentences, desc="Analyzing Sentiments"):
             s = custom_sentiment_analysis(sentiment_analyzer, sentence)
             s['sentence'] = sentence # Saving the original sentence in s so as to retrieve it later
+            s['drop_row'] = False
             sentiments[s["label"]].append(s)
             
         # Since the dataset is imbalanced (there are more positive
@@ -63,21 +64,17 @@ else:
         # so that they are equal in number to the negative ones.
         # (Prioritizing removing those with low score).
         if len(sentiments[0]) > len(sentiments[2]):
-            sentiments[0] = sorted(
-                    sentiments[0],
-                    key=lambda x: x['score'], 
-                    reverse=True
-                )[:len(sentiments[2])]
-
-        sentiments = [s for l in sentiments for s in l]
-        filtered_sentences = [s['sentence'] for s in sentiments]
-        return sentiments, filtered_sentences
-
-    train_sentiments, train_sentences = analyze_with_progress(train_sentences, sentiment_analyzer)
-    validation_sentiments, validation_sentences = analyze_with_progress(
-        validation_sentences, sentiment_analyzer
-    )
-    test_sentiments, test_sentences = analyze_with_progress(test_sentences, sentiment_analyzer)
+            for s in sorted(
+                        sentiments[0],
+                        key=lambda x: x['score'], 
+                        reverse=True
+                    )[:len(sentiments[2])]:
+                s['drop_row'] = True
+        return [s for l in sentiments for s in l]
+    
+    train_sentiments = analyze_with_progress(train_sentences, sentiment_analyzer)
+    validation_sentiments = analyze_with_progress(validation_sentences, sentiment_analyzer)
+    test_sentiments = analyze_with_progress(test_sentences, sentiment_analyzer)
 
     # Add sentiments and scores to the dataset
     def add_sentiments(dataset_split, sentiments):
@@ -85,14 +82,14 @@ else:
         labels = [result["label"] for result in sentiments]
         # Add 'scores' column with confidence scores
         scores = [result["score"] for result in sentiments]
-
-        # breakpoint
+        drop_row = [result["drop_row"] for result in sentiments]
         
         # Add both columns to the dataset split
         dataset_split = dataset_split.add_column("sentiments", labels)
         dataset_split = dataset_split.add_column("scores", scores)
-
-        return dataset_split
+        dataset_split = dataset_split.add_column("drop_row", drop_row)
+        
+        return dataset_split.filter(lambda x: not x['drop_row']).remove_columns(["drop_row"])
 
     dataset["train"] = add_sentiments(dataset["train"], train_sentiments)
     dataset["validation"] = add_sentiments(dataset["validation"], validation_sentiments)
@@ -129,11 +126,13 @@ else:
                 labels.extend([label] * len(word_tokens))
             
             list_tokens.append(tokens)
+            
+            model = BertModel.from_pretrained('bert-base-cased')
             list_labels.append(labels)
             token_lengths.append(len(tokens))
 
-        padded_tokens = pad_sequence(list_tokens, batch_first=True, padding_value=tokenizer.pad_token_id)
-        padded_labels = pad_sequence(list_labels, batch_first=True, padding_value=-1)
+        padded_tokens = pad_sequence(torch.tensor(list_tokens), batch_first=True, padding_value=tokenizer.pad_token_id)
+        padded_labels = pad_sequence(torch.tensor(list_labels), batch_first=True, padding_value=-1)
         
         processed_dataset[dataset_name] = {
             "tokens": padded_tokens,
