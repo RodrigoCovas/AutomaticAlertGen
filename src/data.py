@@ -226,8 +226,8 @@ else:
             batch_labels = labels[i:i + BATCH_SIZE]
             batch_sentiments = sentiments[i:i + BATCH_SIZE]
 
-            embeddings, padded_labels, sentiments = process_batch(batch_tokens, batch_labels, batch_sentiments)
-            save_batch(dataset_name, i // BATCH_SIZE, embeddings, padded_labels, sentiments)
+            embeddings, padded_labels, processed_sentiments = process_batch(batch_tokens, batch_labels, batch_sentiments)
+            save_batch(dataset_name, i // BATCH_SIZE, embeddings, padded_labels, processed_sentiments)
 
     # Process all splits (train/validation/test)
     for dataset_name in datasets_names:
