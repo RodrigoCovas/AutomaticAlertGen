@@ -1,23 +1,72 @@
 import os
-from datasets import load_dataset, load_from_disk
+from datasets import load_dataset
 from transformers import pipeline
 from tqdm import tqdm
 from transformers import BertTokenizer, BertModel
 from torch.nn.utils.rnn import pad_sequence
 import torch
+from torch.utils.data import Dataset, DataLoader
 
 # Define the path to save/load the dataset
-dataset_path = "data/conll2003_dataset"
+dataset_path = "data"
 
 # Check if the dataset has already been processed and saved
 if os.path.exists(dataset_path):
-    print("Loading dataset from disk...")
-    dataset = load_from_disk(dataset_path)
+    class CustomPTDataset(Dataset):
+        def __init__(self, directory):
+            """
+            Args:
+                directory (str): Path to the directory containing .pt files.
+            """
+            self.directory = directory
+            self.file_paths = [os.path.join(directory, f) for f in os.listdir(directory) if f.endswith('.pt')]
+            self.file_paths.sort()  # Ensure consistent ordering
+
+        def __len__(self):
+            """Returns the total number of .pt files."""
+            return len(self.file_paths)
+
+        def __getitem__(self, idx):
+            """
+            Args:
+                idx (int): Index of the file to load.
+            Returns:
+                Tensor: Loaded tensor from the .pt file.
+            """
+            file_path = self.file_paths[idx]
+            data = torch.load(file_path, weights_only=True)
+            return data
+    
+    # Paths to your dataset directories
+    train_dir = f"{dataset_path}/train"
+    val_dir = f"{dataset_path}/validation"
+    test_dir = f"{dataset_path}/test"
+
+    # Create datasets
+    train_dataset = CustomPTDataset(train_dir)
+    val_dataset = CustomPTDataset(val_dir)
+    test_dataset = CustomPTDataset(test_dir)
+    
+    batch_size = 32  # Set your desired batch size
+
+    # Create DataLoaders
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+
+    # Example: Iterating through the train loader
+    for batch_idx, data in enumerate(train_loader):
+        print(f"Batch {batch_idx + 1}:")
+        print(data.shape)  # Inspect the shape of the loaded tensor
+
 else:
     print("Processing dataset...")
 
     # Load the original CoNLL-2003 dataset
     dataset = load_dataset("conll2003", trust_remote_code=True)
+    # dataset["train"] = dataset["train"].select(range(300))
+    # dataset["validation"] = dataset["validation"].select(range(300))
+    # dataset["test"] = dataset["test"].select(range(300))
 
     # Extract sentences from tokens
     def extract_sentences(dataset_split):
@@ -90,57 +139,80 @@ else:
         dataset_split = dataset_split.add_column("drop_row", drop_row)
         
         return dataset_split.filter(lambda x: not x['drop_row']).remove_columns(["drop_row"])
-
+    
     dataset["train"] = add_sentiments(dataset["train"], train_sentiments)
     dataset["validation"] = add_sentiments(dataset["validation"], validation_sentiments)
     dataset["test"] = add_sentiments(dataset["test"], test_sentiments)
 
     # Initialize BERT tokenizer
     tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
-
+    model = BertModel.from_pretrained('bert-base-uncased')
+    
     datasets_names = ["train", "validation", "test"]
     processed_dataset = {}
-
-    for dataset_name in datasets_names:
-        group_words = dataset[dataset_name]["tokens"]
-        group_labels = dataset[dataset_name]["ner_tags"]
-        group_sentiments = dataset[dataset_name]["sentiments"]
-
-        # Initialize lists for subtokens and propagated labels
-        list_tokens = []
-        list_labels = []
-        token_lengths = []
-        # Process each sentence (words + labels)
-        for words, word_labels in tqdm(zip(group_words, group_labels), total=len(group_words), desc=f"Processing {dataset_name}"):
-            if len(words) != len(word_labels):
-                raise ValueError(f"Mismatch between words and labels in {dataset_name}: {words}, {word_labels}")
-            
-            tokens = []
-            labels = []
-            for word, label in zip(words, word_labels):
-                # Tokenize the word into subtokens
-                word_tokens = tokenizer.tokenize(word)
-                # Extend the token list with subtokens
-                tokens.extend(word_tokens)
-                # Extend the label list with the same label for each subtoken
-                labels.extend([label] * len(word_tokens))
-            
-            list_tokens.append(tokens)
-            
-            model = BertModel.from_pretrained('bert-base-cased')
-            list_labels.append(labels)
-            token_lengths.append(len(tokens))
-
-        padded_tokens = pad_sequence(torch.tensor(list_tokens), batch_first=True, padding_value=tokenizer.pad_token_id)
-        padded_labels = pad_sequence(torch.tensor(list_labels), batch_first=True, padding_value=-1)
-        
-        processed_dataset[dataset_name] = {
-            "tokens": padded_tokens,
-            "ner_tags": padded_labels,
-            "lengths": torch.tensor(token_lengths),
-            "sentiments": torch.tensor(group_sentiments)
-        }
     
-    # Save the modified dataset to a directory on disk
-    print("Saving processed dataset to disk...")
-    dataset.save_to_disk(dataset_path)
+    # Define batch size
+    BATCH_SIZE = 100
+
+    # Directory to save processed batches
+    output_dir = "./data"
+    datasets_names = ["train", "validation", "test"]
+    for dataset_name in datasets_names:
+        os.makedirs(os.path.join(output_dir, dataset_name), exist_ok=True)
+
+    def process_batch(batch_tokens, batch_labels, batch_sentiments):
+        """Processes a single batch of tokens and labels."""
+        # Tokenize and encode the batch
+        encoded_batch = tokenizer(
+            batch_tokens,
+            is_split_into_words=True,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            add_special_tokens=True  # Add [CLS] and [SEP] tokens
+        )
+        input_ids = encoded_batch["input_ids"]
+        attention_mask = encoded_batch["attention_mask"]
+
+        # Generate embeddings using BERT
+        with torch.no_grad():
+            outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+            embeddings = outputs.last_hidden_state  # Shape: (batch_size, seq_len, hidden_size)
+
+        # Convert labels to tensors and pad them dynamically
+        label_tensors = [torch.tensor(labels) for labels in batch_labels]
+        padded_labels = pad_sequence(label_tensors, batch_first=True, padding_value=-1)
+        sentiments = torch.tensor(batch_sentiments)
+
+        return embeddings, padded_labels, sentiments
+
+    def save_batch(dataset_name, batch_idx, embeddings, labels, sentiments):
+        """Saves processed batch embeddings and labels to disk."""
+        save_path = os.path.join(output_dir, dataset_name, f"batch_{batch_idx}.pt")
+        torch.save({
+            "embeddings": embeddings.cpu(),
+            "labels": labels.cpu(),
+            "sentiments": sentiments.cpu()
+        }, save_path)
+
+    # Process dataset in batches for each split (train/validation/test)
+    def process_in_batches(dataset_split, dataset_name):
+        """Processes the dataset in batches."""
+        tokens = dataset_split["tokens"]
+        labels = dataset_split["ner_tags"]
+        sentiments = dataset_split["sentiments"]
+
+        for i in tqdm(range(0, len(tokens), BATCH_SIZE), desc=f"Processing {dataset_name} batches"):
+            batch_tokens = tokens[i:i + BATCH_SIZE]
+            batch_labels = labels[i:i + BATCH_SIZE]
+            batch_sentiments = sentiments[i:i + BATCH_SIZE]
+
+            embeddings, padded_labels, sentiments = process_batch(batch_tokens, batch_labels, batch_sentiments)
+            save_batch(dataset_name, i // BATCH_SIZE, embeddings, padded_labels, sentiments)
+
+    # Process all splits (train/validation/test)
+    for dataset_name in datasets_names:
+        print(f"Processing {dataset_name} split...")
+        process_in_batches(dataset[dataset_name], dataset_name)
+
+    print(f"Processed batches saved to {output_dir}")
