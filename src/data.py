@@ -54,19 +54,26 @@ if os.path.exists(dataset_path):
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
-    # Example: Iterating through the train loader
-    for batch_idx, data in enumerate(train_loader):
-        print(f"Batch {batch_idx + 1}:")
-        print(data.shape)  # Inspect the shape of the loaded tensor
+    # Use next iter to print the first batch of data
+    train_iter = iter(train_loader)
+    val_iter = iter(val_loader)
+    test_iter = iter(test_loader)
+    train_batch = next(train_iter)
+    val_batch = next(val_iter)
+    test_batch = next(test_iter)
+    print("Train batch:", train_batch)
+    print("Validation batch:", val_batch)
+    print("Test batch:", test_batch)
+
 
 else:
     print("Processing dataset...")
 
     # Load the original CoNLL-2003 dataset
     dataset = load_dataset("conll2003", trust_remote_code=True)
-    # dataset["train"] = dataset["train"].select(range(300))
-    # dataset["validation"] = dataset["validation"].select(range(300))
-    # dataset["test"] = dataset["test"].select(range(300))
+    dataset["train"] = dataset["train"].select(range(300))
+    dataset["validation"] = dataset["validation"].select(range(300))
+    dataset["test"] = dataset["test"].select(range(300))
 
     # Extract sentences from tokens
     def extract_sentences(dataset_split):
@@ -148,6 +155,17 @@ else:
     tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
     model = BertModel.from_pretrained('bert-base-uncased')
     
+    def get_max_length(dataset_split):
+        """Returns the maximum length of tokens in the dataset split."""
+        max_length = max(len(tokens) for tokens in dataset_split["tokens"])
+        return max_length
+    
+    length_list = []
+    for dataset_name in ["train", "validation", "test"]:
+        length_list.append(get_max_length(dataset[dataset_name]))
+    max_length = max(length_list) + 2  # Adding 2 for [CLS] and [SEP] tokens
+    print(f"Max length of tokens: {max_length}")
+    
     datasets_names = ["train", "validation", "test"]
     processed_dataset = {}
     
@@ -167,8 +185,9 @@ else:
             batch_tokens,
             is_split_into_words=True,
             return_tensors="pt",
-            padding=True,
+            padding="max_length",
             truncation=True,
+            max_length=max_length,
             add_special_tokens=True  # Add [CLS] and [SEP] tokens
         )
         input_ids = encoded_batch["input_ids"]
