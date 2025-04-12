@@ -1,4 +1,12 @@
+data/
+runs/
+models/*
+__pycache__/
+.vscode/
+.mypy_cache/
+
 *.json
 *.arrow
 *.pdf
 *.pt
+!models/best_model.pt
