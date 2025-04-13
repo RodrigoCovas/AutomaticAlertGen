@@ -4,6 +4,7 @@ from torch.utils.tensorboard import SummaryWriter
 from typing import Optional
 from src.utils import MAE, EarlyStopping
 
+
 @torch.enable_grad()
 def train_step(
     model: torch.nn.Module,
@@ -34,19 +35,28 @@ def train_step(
     total_loss = 0.0
     num_batches = 0
     model.train()
-    for batch in train_data:
+    # for batch in train_data:
+    for i, batch in enumerate(train_data):
         inputs = batch["embeddings"]
         ner_tags = batch["labels"]
         sentiments = batch["sentiments"]
         inputs = inputs.to(torch.float32).to(device)
         ner_tags = ner_tags.to(torch.float32).to(device)  # NER targets (multi-class)
-        sentiments = sentiments.to(torch.float32).to(device)  # Sentiment targets (binary)
+        sentiments = sentiments.to(torch.float32).to(
+            device
+        )  # Sentiment targets (binary)
         optimizer.zero_grad()
         ner_predictions, sentiment_predictions = model(inputs)
+        print(
+            f"NER Predictions: {ner_predictions}, Sentiment Predictions: {sentiment_predictions}, Shapes: {ner_predictions.shape}, {sentiment_predictions.shape}"
+        )
         batch_loss = combined_loss(
-            ner_predictions, ner_tags,
-            sentiment_predictions, sentiments,
-            ner_loss_fn, sentiment_loss_fn
+            ner_predictions,
+            ner_tags,
+            sentiment_predictions,
+            sentiments,
+            ner_loss_fn,
+            sentiment_loss_fn,
         )
         batch_loss.backward()
         optimizer.step()
@@ -61,6 +71,7 @@ def train_step(
     writer.add_scalar("train/sentiment_mae", sentiment_mae.compute(), epoch)
     ner_mae.reset()
     sentiment_mae.reset()
+
 
 @torch.no_grad()
 def val_step(
@@ -95,15 +106,24 @@ def val_step(
     total_loss = 0.0
     num_batches = 0
     model.eval()
-    for inputs, (ner_tags, sentiments) in val_data:
+    for i, batch in enumerate(val_data):
+        inputs = batch["embeddings"]
+        ner_tags = batch["labels"]
+        sentiments = batch["sentiments"]
         inputs = inputs.to(torch.float32).to(device)
         ner_tags = ner_tags.to(torch.float32).to(device)
         sentiments = sentiments.to(torch.float32).to(device)
         ner_predictions, sentiment_predictions = model(inputs)
+        print(
+            f"NER Predictions: {ner_predictions}, Sentiment Predictions: {sentiment_predictions}, Shapes: {ner_predictions.shape}, {sentiment_predictions.shape}"
+        )
         batch_loss = combined_loss(
-            ner_predictions, ner_tags,
-            sentiment_predictions, sentiments,
-            ner_loss_fn, sentiment_loss_fn
+            ner_predictions,
+            ner_tags,
+            sentiment_predictions,
+            sentiments,
+            ner_loss_fn,
+            sentiment_loss_fn,
         )
         total_loss += batch_loss.item()
         num_batches += 1
@@ -119,6 +139,7 @@ def val_step(
     if scheduler:
         scheduler.step(avg_loss)
     return avg_loss
+
 
 @torch.no_grad()
 def t_step(
@@ -136,30 +157,36 @@ def t_step(
 
     Returns:
         A dictionary containing metrics for NER and Sentiment Analysis tasks.
-            - "ner_accuracy": Accuracy of NER predictions.
-            - "sentiment_mae": Mean Absolute Error of Sentiment Analysis predictions.
-            - "sentiment_accuracy": Accuracy of Sentiment Analysis predictions (optional).
-            - Additional metrics can be added as needed.
     """
 
     ner_mae = MAE()
     sentiment_mae = MAE()
     model.eval()
-    for inputs, (ner_tags, sentiments) in test_data:
+    for i, batch in enumerate(test_data):
+        inputs = batch["embeddings"]
+        ner_tags = batch["labels"]
+        sentiments = batch["sentiments"]
         inputs = inputs.to(torch.float32).to(device)
         ner_tags = ner_tags.to(torch.float32).to(device)
         sentiments = sentiments.to(torch.float32).to(device)
         ner_predictions, sentiment_predictions = model(inputs)
         # Update metrics
         ner_mae.update(ner_predictions, ner_tags)
-        sentiment_mae.update(sentiment_predictions, sentiments)
+        sentiment_mae.update(sentiment_predictions.squeeze(), sentiments)
     return {
-        "ner_accuracy": ner_mae.compute(),
+        "ner_mae": ner_mae.compute(),
         "sentiment_mae": sentiment_mae.compute(),
     }
-    
 
-def combined_loss(ner_predictions, ner_targets, sentiment_predictions, sentiment_targets, ner_loss_fn, sentiment_loss_fn):
+
+def combined_loss(
+    ner_predictions,
+    ner_targets,
+    sentiment_predictions,
+    sentiment_targets,
+    ner_loss_fn,
+    sentiment_loss_fn,
+):
     """
     Compute the combined loss for multi-task learning.
 
@@ -175,5 +202,8 @@ def combined_loss(ner_predictions, ner_targets, sentiment_predictions, sentiment
         Combined loss value.
     """
     loss_ner = ner_loss_fn(ner_predictions, ner_targets)
-    loss_sentiment = sentiment_loss_fn(sentiment_predictions.squeeze(), sentiment_targets.float())
+    loss_sentiment = sentiment_loss_fn(
+        sentiment_predictions.squeeze(), sentiment_targets.float()
+    )
+    print(f"NER Loss: {loss_ner.item()}, Sentiment Loss: {loss_sentiment.item()}")
     return loss_ner + loss_sentiment

@@ -29,9 +29,9 @@ def main() -> None:
     """
 
     # Hyperparameters
-    epochs: int = 1
+    epochs: int = 5
     lr: float = 1e-3
-    batch_size: int = 32
+    batch_size: int = 16
     hidden_size: int = 4
     patience: int = 20
     num_layers: int = 1
