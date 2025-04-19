@@ -13,69 +13,6 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 
 
-# class NER_SA_Dataset(Dataset):
-#     def __init__(self, directory: str = "./data/train"):
-#         super().__init__()
-
-#         # Load all file paths from the directory
-#         self._file_paths = [
-#             os.path.join(directory, file) for file in os.listdir(directory)
-#         ]
-
-#         # Check if there are any files in the directory
-#         if not self._file_paths:
-#             raise ValueError(f"No files found in directory: {directory}")
-
-#         # Get batch size from the first file
-#         self._batch_size = torch.load(self._file_paths[0], weights_only=True)[
-#             "embeddings"
-#         ].shape[0]
-#         self._batch_in_memory = (-1, None)
-
-#     def __len__(self):
-#         # Calculate total number of samples across all batches
-#         last_batch_size = torch.load(self._file_paths[-1], weights_only=True)[
-#             "embeddings"
-#         ].shape[0]
-#         return (len(self._file_paths) - 1) * self._batch_size + last_batch_size
-
-#     def __getitem__(self, index) -> dict[str, torch.Tensor]:
-#         batch_idx = index // self._batch_size
-
-#         # Validate batch index
-#         if batch_idx < 0 or batch_idx >= len(self._file_paths):
-#             raise IndexError(f"Index {index} is out of range for dataset.")
-
-#         # Cache batch if not already cached
-#         if self._batch_in_memory[0] != batch_idx:
-#             self._cache_batch(batch_idx)
-
-#         rel_idx = index % self._batch_size
-#         batch_data = self._batch_in_memory[1]
-        
-#         actual_batch_size = batch_data["embeddings"].shape[0]
-#         if rel_idx >= actual_batch_size:
-#             raise IndexError(f"Relative index {rel_idx} exceeds actual batch size {actual_batch_size}")
-
-#         return {
-#             field: batch_data[field][rel_idx]
-#             for field in ("embeddings", "labels", "sentiments")
-#         } 
-
-#     def _cache_batch(self, n_batch: int):
-#         """
-#         Stores the desired batch in memory so as not to read it each
-#         "__getitem__" if the desired item is in the batch.
-#         """
-#         # Validate batch index before accessing file paths
-#         if n_batch < 0 or n_batch >= len(self._file_paths):
-#             raise IndexError(f"Batch index {n_batch} is out of range for file paths.")
-        
-#         self._batch_in_memory = (
-#             n_batch,
-#             torch.load(self._file_paths[n_batch], weights_only=True),
-#         )
-
 class NER_SA_Dataset(Dataset):
     def __init__(self, directory: str = "./data/train", pad_batches: bool = True):
         """

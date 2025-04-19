@@ -24,9 +24,8 @@ def main(name: str) -> float:
     This function is the main program.
     """
 
-    # TODO
     _, _, test_data = load_data()
-    model: RecursiveScriptModule = torch.jit.load(f"models/{name}.pt")
+    model: RecursiveScriptModule = torch.jit.load(f"models/{name}.pt").to(device)
     metrics: float = t_step(model, test_data, device)
     return metrics
 

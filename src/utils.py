@@ -183,6 +183,83 @@ class MAE:
         self.total = 0
 
 
+class NERAccuracy:
+    """
+    Accuracy metric for NER tasks, measuring token-level accuracy.
+
+    Attributes:
+        correct: number of correct predictions.
+        total: number of total valid tokens (excluding padding/masked tokens).
+    """
+
+    def __init__(self, ignore_index: int = -1) -> None:
+        self.correct = 0
+        self.total = 0
+        self.ignore_index = ignore_index
+
+    def update(self, predictions: torch.Tensor, labels: torch.Tensor) -> None:
+        """
+        Updates the number of correct predictions and total valid tokens.
+
+        Args:
+            predictions: [batch_size, seq_len, num_classes] or [batch_size, seq_len]
+            labels: [batch_size, seq_len]
+        """
+        # Convertir logits a etiquetas si es necesario
+        if predictions.dim() == 3:
+            predictions = predictions.argmax(dim=-1)
+
+        assert (
+            predictions.shape == labels.shape
+        ), f"Shape mismatch: predictions {predictions.shape}, labels {labels.shape}"
+
+        mask = labels != self.ignore_index
+        self.correct += (predictions[mask] == labels[mask]).sum().item()
+        self.total += mask.sum().item()
+
+    def compute(self) -> float:
+        if self.total == 0:
+            return 0.0
+        return self.correct / self.total
+
+    def reset(self) -> None:
+        self.correct = 0
+        self.total = 0
+
+
+class ClassificationAccuracy:
+    """
+    Accuracy for classification tasks like Sentiment Analysis.
+
+    Attributes:
+        correct: number of correct predictions.
+        total: total number of examples.
+    """
+
+    def __init__(self) -> None:
+        self.correct = 0
+        self.total = 0
+
+    def update(self, predictions: torch.Tensor, labels: torch.Tensor) -> None:
+        """
+        Args:
+            predictions: logits or probabilities, shape [batch_size, num_classes]
+            labels: ground truth labels, shape [batch_size]
+        """
+        preds = predictions.argmax(dim=-1)
+        self.correct += (preds == labels).sum().item()
+        self.total += labels.size(0)
+
+    def compute(self) -> float:
+        if self.total == 0:
+            return 0.0
+        return self.correct / self.total
+
+    def reset(self) -> None:
+        self.correct = 0
+        self.total = 0
+
+
 class EarlyStopping:
     """
     Custom implementation of early stopping to halt training when validation performance
