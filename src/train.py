@@ -29,7 +29,7 @@ def main() -> None:
     """
 
     # Hyperparameters
-    epochs: int = 5
+    epochs: int = 1
     lr: float = 1e-3
     batch_size: int = 16
     hidden_size: int = 32

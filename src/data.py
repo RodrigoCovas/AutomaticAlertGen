@@ -166,7 +166,7 @@ def load_data(batch_size: int = 32):
             raise ValueError(f"Batch {i} has different sizes: {s_emb}, {s_lab}, {s_sent}")
     # Create DataLoaders for each split
     train_loader = DataLoader(
-        train_dataset, batch_size=batch_size, shuffle=False, drop_last=True
+        train_dataset, batch_size=batch_size, shuffle=True, drop_last=True
     )
     validation_loader = DataLoader(
         validation_dataset, batch_size=batch_size, shuffle=False, drop_last=True

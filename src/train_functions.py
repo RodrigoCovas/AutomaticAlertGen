@@ -42,14 +42,14 @@ def train_step(
         sentiments = batch["sentiments"]
         #print(inputs.shape, ner_tags.shape, sentiments.shape)
         inputs = inputs.to(torch.float32).to(device)
-        ner_tags = ner_tags.long().to(torch.float32).to(device)  # NER targets (multi-class)
-        sentiments = sentiments.long().to(torch.float32).to(
+        ner_tags = ner_tags.long().to(device)  # NER targets (multi-class)
+        sentiments = sentiments.long().to(
             device
         )  # Sentiment targets (binary)
         optimizer.zero_grad()
         ner_predictions, sentiment_predictions = model(inputs)
-        print(ner_predictions)
-        print(sentiment_predictions)
+        # print(ner_predictions)
+        # print(sentiment_predictions)
 
         """print(
             f"NER Predictions: {ner_predictions}, Sentiment Predictions: {sentiment_predictions}, Shapes: {ner_predictions.shape}, {sentiment_predictions.shape}"
@@ -70,12 +70,12 @@ def train_step(
         # Update metrics
         ner_acc.update(ner_predictions, ner_tags)
         sentiment_acc.update(sentiment_predictions.squeeze(), sentiments)
-        print(f"NER Acc: {ner_acc.compute()}, Sentiment Acc: {sentiment_acc.compute()}")
+        # print(f"NER Acc: {ner_acc.compute()}, Sentiment Acc: {sentiment_acc.compute()}")
 
     avg_loss = total_loss / num_batches if num_batches > 0 else 0.0
     writer.add_scalar("train/loss", avg_loss, epoch)
-    writer.add_scalar("train/ner_mae", ner_acc.compute(), epoch)
-    writer.add_scalar("train/sentiment_mae", sentiment_acc.compute(), epoch)
+    writer.add_scalar("train/ner_acc", ner_acc.compute(), epoch)
+    writer.add_scalar("train/sentiment_acc", sentiment_acc.compute(), epoch)
     ner_acc.reset()
     sentiment_acc.reset()
 
@@ -118,8 +118,8 @@ def val_step(
         ner_tags = batch["labels"]
         sentiments = batch["sentiments"]
         inputs = inputs.to(torch.float32).to(device)
-        ner_tags = ner_tags.to(torch.float32).to(device)
-        sentiments = sentiments.to(torch.float32).to(device)
+        ner_tags = ner_tags.long().to(device)
+        sentiments = sentiments.long().to(device)
         ner_predictions, sentiment_predictions = model(inputs)
 
         """print(
@@ -139,12 +139,12 @@ def val_step(
         # Update metrics
         ner_acc.update(ner_predictions, ner_tags)
         sentiment_acc.update(sentiment_predictions.squeeze(), sentiments)
-        print(f"NER Acc: {ner_acc.compute()}, Sentiment Acc: {sentiment_acc.compute()}")
+        # print(f"NER Acc: {ner_acc.compute()}, Sentiment Acc: {sentiment_acc.compute()}")
 
     avg_loss = total_loss / num_batches if num_batches > 0 else 0.0
     writer.add_scalar("val/loss", avg_loss, epoch)
-    writer.add_scalar("val/ner_mae", ner_acc.compute(), epoch)
-    writer.add_scalar("val/sentiment_mae", sentiment_acc.compute(), epoch)
+    writer.add_scalar("val/ner_acc", ner_acc.compute(), epoch)
+    writer.add_scalar("val/sentiment_acc", sentiment_acc.compute(), epoch)
     ner_acc.reset()
     sentiment_acc.reset()
     if scheduler:
@@ -178,8 +178,8 @@ def t_step(
         ner_tags = batch["labels"]
         sentiments = batch["sentiments"]
         inputs = inputs.to(torch.float32).to(device)
-        ner_tags = ner_tags.to(torch.float32).to(device)
-        sentiments = sentiments.to(torch.float32).to(device)
+        ner_tags = ner_tags.long().to(device)
+        sentiments = sentiments.long().to(device)
         ner_predictions, sentiment_predictions = model(inputs)
         # Update metrics
         ner_acc.update(ner_predictions, ner_tags)
@@ -223,6 +223,6 @@ def combined_loss(
     loss_ner = ner_loss_fn(ner_predictions, ner_targets.long())
     loss_sa = sa_loss_fn(sa_predictions, sa_targets.long())
     # loss_sa = sa_loss_fn(sa_predictions.squeeze(), sa_targets.long())
-    print(f"NER Loss: {loss_ner.item()}, Sentiment Loss: {loss_sa.item()}")
+    # print(f"NER Loss: {loss_ner.item()}, Sentiment Loss: {loss_sa.item()}")
     return loss_ner + loss_sa
 
