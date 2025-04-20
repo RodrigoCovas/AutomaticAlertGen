@@ -6,7 +6,7 @@ __pycache__/
 .mypy_cache/
 
 *.json
-*.arrow
-*.pdf
 *.pt
 !models/best_model.pt
+*.pth
+!data/*.txt

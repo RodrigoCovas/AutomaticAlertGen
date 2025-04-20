@@ -1,25 +1,40 @@
 import torch
 import torch.nn as nn
-from transformers import GPT2LMHeadModel, GPT2Tokenizer
+from typing import Tuple
+
 
 class CombinedModel(nn.Module):
     def __init__(
         self,
-        input_dim,
-        hidden_dim,
-        num_layers,
-        num_ner_classes,
-        sentiment_classes=3,
-        bidirectional=True,
-    ):
-        super(CombinedModel, self).__init__()
-        self.hidden_dim = hidden_dim
-        self.num_layers = num_layers
-        self.bidirectional = bidirectional
-        self.num_directions = 2 if bidirectional else 1
+        input_dim: int,
+        hidden_dim: int,
+        num_layers: int,
+        num_ner_classes: int,
+        sentiment_classes: int = 3,
+        bidirectional: bool = True,
+    ) -> None:
+        """
+        A multi-task model for both Named Entity Recognition (NER) and
+        Sentiment Analysis (SA).
+        Uses a shared LSTM encoder, with separate heads for NER (token-level)
+        and SA (sentence-level).
 
-        # Shared LSTM encoder
-        self.encoder = nn.LSTM(
+        Args:
+            input_dim (int): Dimension of input embeddings.
+            hidden_dim (int): Hidden size for the LSTM.
+            num_layers (int): Number of LSTM layers.
+            num_ner_classes (int): Number of NER tag classes.
+            sentiment_classes (int): Number of sentiment classes (default: 3).
+            bidirectional (bool): If True, use a bidirectional LSTM.
+        """
+        super(CombinedModel, self).__init__()
+        self.hidden_dim: int = hidden_dim
+        self.num_layers: int = num_layers
+        self.bidirectional: bool = bidirectional
+        self.num_directions: int = 2 if bidirectional else 1
+
+        # Shared LSTM encoder for sequence modeling
+        self.encoder: nn.LSTM = nn.LSTM(
             input_size=input_dim,
             hidden_size=hidden_dim,
             num_layers=num_layers,
@@ -27,108 +42,55 @@ class CombinedModel(nn.Module):
             batch_first=True,
         )
 
-        # NER head: token-level classifier
-        self.ner_classifier = nn.Linear(
+        # NER head: token-level classifier (per token in sequence)
+        self.ner_classifier: nn.Linear = nn.Linear(
             hidden_dim * self.num_directions, num_ner_classes
         )
-        # SA head: sentence-level classifier
-        self.sa_classifier = nn.Linear(
+        # SA head: sentence-level classifier (on last hidden state)
+        self.sa_classifier: nn.Linear = nn.Linear(
             hidden_dim * self.num_directions, sentiment_classes
         )
 
-    def forward(self, embeddings):
-        if embeddings.dim() == 2:
-            # If input is (batch, input_dim), add seq_len dimension
-            embeddings = embeddings.unsqueeze(1)
-        # Ensure LSTM weights are contiguous for performance
-        self.encoder.flatten_parameters()
-        # embeddings: (batch, seq_len, input_dim)
-        lstm_out, (h_n, _) = self.encoder(
-            embeddings
-        )  # lstm_out: (batch, seq_len, hidden_dim*num_directions)
-
-        # NER: classify each token
-        ner_logits = self.ner_classifier(lstm_out)  # (batch, seq_len, num_ner_classes)
-
-        # SA: use the last hidden state(s)
-        if self.bidirectional:
-            # Get last layer's forward and backward hidden states
-            forward = h_n[-2, :, :]  # (batch, hidden_dim)
-            backward = h_n[-1, :, :]  # (batch, hidden_dim)
-            h_n_cat = torch.cat((forward, backward), dim=1)  # (batch, hidden_dim*2)
-        else:
-            h_n = h_n[-1]  # (batch_size, hidden_dim)
-
-        output = self.classifier(h_n)  # (batch_size, num_classes)
-        return output
-
-
-"""class MyMultiTaskModel(torch.nn.Module):
-    def __init__(self, hidden_size: int, num_layers: int, bidirectional: bool, ner_tag_size: int) -> None:
-        
-        Constructor for the multi-task model.
+    def forward(self, embeddings: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Forward pass for the model.
 
         Args:
-            hidden_size: Hidden size of the LSTM layers.
-            num_layers: Number of LSTM layers.
-            bidirectional: Whether the LSTM is bidirectional.
-            ner_tag_size: Number of NER tags (output size for NER task).
-        
-        super(MyMultiTaskModel, self).__init__()
-        self.hidden_size: int = hidden_size
-        self.num_layers: int = num_layers if not bidirectional else 2
-        self.dropout: float = 0.2 if num_layers > 1 else 0.0
-        
-        # LSTM layer
-        self.lstm: torch.nn.LSTM = torch.nn.LSTM(
-            input_size= 768, # BERT Embedding size
-            hidden_size=hidden_size,
-            num_layers=num_layers,
-            batch_first=True,
-            dropout=self.dropout,
-            bidirectional=bidirectional,
-        )
-        
-        lstm_output_size: int = hidden_size * 2 if bidirectional else hidden_size
-        
-        # Fully connected layer for NER tags
-        self.fc_ner: torch.nn.Linear = torch.nn.Linear(lstm_output_size, ner_tag_size)
-        
-        # Fully connected layer for sentiment analysis (output size is 1)
-        self.fc_sentiment: torch.nn.Linear = torch.nn.Linear(lstm_output_size, 1)
-
-    def forward(self, inputs: torch.Tensor) -> tuple:
-        
-        Forward pass of the model.
-
-        Args:
-            inputs: Input tensor. Dimensions: [batch, length tokens, embeddings].
+            embeddings (torch.Tensor): Input tensor of shape (batch, seq_len, input_dim)
+                or (batch, input_dim) (single vector per batch).
 
         Returns:
-            A tuple containing:
-                - NER tag predictions. Dimensions: [batch, ner_tag_size].
-                - Sentiment analysis prediction. Dimensions: [batch, 1].
-        
-        batch_size: int = inputs.size(0)
-        
-        # Initialize hidden and cell states
-        h0: torch.Tensor = torch.zeros(
-            self.num_layers, batch_size, self.hidden_size
-        ).to(inputs.device)
-        c0: torch.Tensor = torch.zeros(
-            self.num_layers, batch_size, self.hidden_size
-        ).to(inputs.device)
-        
-        # Pass through LSTM
-        out, _ = self.lstm(inputs, (h0, c0))
-        
-        # Use the output of the last time step for both tasks
-        lstm_last_output = out[:, -1, :]  # Shape: [batch, lstm_output_size]
-        
-        # NER tag predictions
-        ner_output = self.fc_ner(lstm_last_output)  # Shape: [batch, ner_tag_size]
-        
-        # Sentiment analysis prediction
-        sentiment_output = self.fc_sentiment(lstm_last_output)  # Shape: [batch, 1]
-        
-        return ner_output, sentiment_output"""
+            Tuple[torch.Tensor, torch.Tensor]:
+                - ner_logits: (batch, seq_len, num_ner_classes)
+                - sa_logits: (batch, sentiment_classes)
+        """
+        if embeddings.dim() == 2:
+            # If input is (batch, input_dim), add a sequence length dimension
+            embeddings = embeddings.unsqueeze(1)
+        # Ensure LSTM weights are contiguous in memory for efficiency
+        self.encoder.flatten_parameters()
+        # Pass through LSTM: lstm_out is (batch, seq_len, hidden_dim*num_directions)
+        lstm_out, (h_n, _) = self.encoder(embeddings)
+
+        # NER: classify each token's representation
+        ner_logits: torch.Tensor = self.ner_classifier(
+            lstm_out
+        )  # (batch, seq_len, num_ner_classes)
+
+        h_n_cat: torch.Tensor
+        # SA: use the last hidden state(s) from the LSTM for sentence classification
+        if self.bidirectional:
+            # For bidirectional LSTM, concatenate the last forward and
+            # backward hidden states
+            forward: torch.Tensor = h_n[-2, :, :]  # (batch, hidden_dim)
+            backward: torch.Tensor = h_n[-1, :, :]  # (batch, hidden_dim)
+            h_n_cat = torch.cat((forward, backward), dim=1)  # (batch, hidden_dim*2)
+        else:
+            # For unidirectional LSTM, use the last layer's hidden state
+            h_n_cat = h_n[-1]  # (batch, hidden_dim)
+
+        # SA: classify the sentence representation
+        sa_logits: torch.Tensor = self.sa_classifier(
+            h_n_cat
+        )  # (batch, sentiment_classes)
+        return ner_logits, sa_logits

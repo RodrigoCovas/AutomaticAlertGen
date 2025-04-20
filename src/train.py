@@ -41,25 +41,25 @@ def main() -> None:
     num_ner_classes: int = 10
     num_sa_classes: int = 3
 
+    # Clear any previous nohup output (optional, for logging in server environments)
     open("nohup.out", "w").close()
 
-    (
-        train_loader_ner,
-        val_loader_ner,
-        _,
-        train_loader_sa,
-        val_loader_sa,
-        _
-    ) = load_data(batch_size=batch_size)
+    # Load data loaders for NER and SA
+    (train_loader_ner, val_loader_ner, _, train_loader_sa, val_loader_sa, _) = (
+        load_data(batch_size=batch_size)
+    )
 
-    # Get model input/output size from a sample batch
+    # Get model input size from a sample batch (embedding dimension)
+    input_dim: int
     for batch in train_loader_ner:
-        input_dim = batch["embeddings"].shape[2]  # Size of embedding vector
+        input_dim = batch["embeddings"].shape[2]
         break
 
+    # Model and experiment naming
     name: str = f"model_hs_{hidden_size}_{batch_size}_{epochs_ner}_{epochs_sa}"
     writer: SummaryWriter = SummaryWriter(f"runs/{name}")
 
+    # Initialize the multi-task model
     model: torch.nn.Module = CombinedModel(
         input_dim=input_dim,
         hidden_dim=hidden_size,
@@ -69,10 +69,18 @@ def main() -> None:
         bidirectional=bidirectional,
     ).to(device)
 
-    ner_class_weights = compute_class_weights(train_loader_ner, num_ner_classes).to(device)
-    sa_class_weights = compute_class_weights(train_loader_sa, num_sa_classes).to(device)
+    # Compute class weights for loss balancing
+    ner_class_weights: torch.Tensor = compute_class_weights(
+        train_loader_ner, num_ner_classes
+    ).to(device)
+    sa_class_weights: torch.Tensor = compute_class_weights(
+        train_loader_sa, num_sa_classes
+    ).to(device)
 
-    ner_loss: torch.nn.Module = torch.nn.CrossEntropyLoss(weight=ner_class_weights, ignore_index=-1)
+    # Define loss functions with class weights
+    ner_loss: torch.nn.Module = torch.nn.CrossEntropyLoss(
+        weight=ner_class_weights, ignore_index=-1
+    )
     sentiment_loss: torch.nn.Module = torch.nn.CrossEntropyLoss(weight=sa_class_weights)
     optimizer: torch.optim.Optimizer = torch.optim.AdamW(
         model.parameters(), lr=lr_ner, weight_decay=1e-4
@@ -82,41 +90,46 @@ def main() -> None:
             optimizer, mode="min", patience=2, factor=0.5
         )
     )
-    early_stopping_ner: EarlyStopping = EarlyStopping(patience=patience, mode="min", delta=1e-4)
+    early_stopping_ner: EarlyStopping = EarlyStopping(
+        patience=patience, mode="min", delta=1e-4
+    )
 
     # ====== 1. Train on NER ======
     print("Training NER...")
-    best_val_loss_ner = float('inf')
-    best_model_path_ner = f"models/{name}_ner_best.pth"
+    best_val_loss_ner: float = float("inf")
+    best_model_path_ner: str = f"models/{name}_ner_best.pth"
 
     for epoch in tqdm(range(epochs_ner)):
         train_step(
             model=model,
             train_data=train_loader_ner,
             ner_loss_fn=ner_loss,
-            sentiment_loss_fn=None,
+            sentiment_loss_fn=sentiment_loss,
             optimizer=optimizer,
             writer=writer,
             epoch=epoch,
             device=device,
-            task="ner"
+            task="ner",
         )
         val_loss: float = val_step(
             model=model,
             val_data=val_loader_ner,
             ner_loss_fn=ner_loss,
-            sentiment_loss_fn=None,
+            sentiment_loss_fn=sentiment_loss,
             scheduler=scheduler,
             writer=writer,
             epoch=epoch,
             device=device,
-            task="ner"
+            task="ner",
         )
         # Save best model if validation loss improves
         if val_loss < best_val_loss_ner:
             best_val_loss_ner = val_loss
             torch.save(model.state_dict(), best_model_path_ner)
-            print(f"New best NER model saved at epoch {epoch+1} with val_loss {val_loss:.4f}")
+            print(
+                f"""New best NER model saved at epoch {epoch+1}
+                with val_loss {val_loss:.4f}"""
+            )
 
         early_stopping_ner(val_loss)
         if early_stopping_ner.early_stop:
@@ -139,46 +152,55 @@ def main() -> None:
         param.requires_grad = False
 
     # ====== 3. Train on SA ======
-    optimizer_sa = torch.optim.AdamW(
-        filter(lambda p: p.requires_grad, model.parameters()), lr=lr_sa, weight_decay=1e-4
+    optimizer_sa: torch.optim.Optimizer = torch.optim.AdamW(
+        filter(lambda p: p.requires_grad, model.parameters()),
+        lr=lr_sa,
+        weight_decay=1e-4,
     )
-    scheduler_sa = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer_sa, mode="min", patience=2, factor=0.5
+    scheduler_sa: torch.optim.lr_scheduler.ReduceLROnPlateau = (
+        torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer_sa, mode="min", patience=2, factor=0.5
+        )
     )
-    early_stopping_sa = EarlyStopping(patience=patience, mode="min", delta=1e-4)
+    early_stopping_sa: EarlyStopping = EarlyStopping(
+        patience=patience, mode="min", delta=1e-4
+    )
 
-    best_val_loss_sa = float('inf')
-    best_model_path_sa = f"models/{name}_sa_best.pth"
+    best_val_loss_sa: float = float("inf")
+    best_model_path_sa: str = f"models/{name}_sa_best.pth"
 
     print("Training Sentiment Analysis...")
     for epoch in tqdm(range(epochs_sa)):
         train_step(
             model=model,
             train_data=train_loader_sa,
-            ner_loss_fn=None,
+            ner_loss_fn=ner_loss,
             sentiment_loss_fn=sentiment_loss,
             optimizer=optimizer_sa,
             writer=writer,
             epoch=epoch,
             device=device,
-            task="sa"
+            task="sa",
         )
-        val_loss: float = val_step(
+        val_loss = val_step(
             model=model,
             val_data=val_loader_sa,
-            ner_loss_fn=None,
+            ner_loss_fn=ner_loss,
             sentiment_loss_fn=sentiment_loss,
             scheduler=scheduler_sa,
             writer=writer,
             epoch=epoch,
             device=device,
-            task="sa"
+            task="sa",
         )
         # Save best model if validation loss improves
         if val_loss < best_val_loss_sa:
             best_val_loss_sa = val_loss
             torch.save(model.state_dict(), best_model_path_sa)
-            print(f"New best SA model saved at epoch {epoch+1} with val_loss {val_loss:.4f}")
+            print(
+                f"""New best SA model saved at epoch {epoch+1}
+                with val_loss {val_loss:.4f}"""
+            )
 
         early_stopping_sa(val_loss)
         if early_stopping_sa.early_stop:
@@ -195,6 +217,7 @@ def main() -> None:
         os.remove(best_model_path_sa)
         print(f"Deleted temporary file: {best_model_path_sa}")
 
+    # Save the final model (e.g., as TorchScript or regular checkpoint)
     save_model(model, name)
 
 
