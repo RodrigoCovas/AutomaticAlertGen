@@ -131,36 +131,6 @@ def get_max_length(dataset_split):
     max_length = max(len(tokens) for tokens in dataset_split["tokens"])
     return max_length
 
-def analyze_with_progress(sentences, sentiment_analyzer) -> list[dict]:
-
-    sentiments: list[dict] = [[], [], []]
-    for sentence in tqdm(sentences, desc="Analyzing Sentiments"):
-        # for sentence in sentences:
-        s = custom_sentiment_analysis(sentiment_analyzer, sentence)
-        s["sentence"] = (
-            sentence  # Saving the original sentence in s so as to retrieve it later
-        )
-        s["drop_row"] = False
-        sentiments[s["label"]].append(s)
-
-    # Since the dataset is imbalanced (there are more positive
-    # entries), We will eliminate part of the positive reviews,
-    # so that they are equal in number to the negative ones.
-    # (Prioritizing removing those with low score).
-    if len(sentiments[0]) > len(sentiments[2]):
-        for s in sorted(sentiments[0], key=lambda x: x["score"], reverse=True)[
-            : len(sentiments[2])
-        ]:
-            s["drop_row"] = True
-    elif len(sentiments[0]) < len(sentiments[2]):
-        for s in sorted(sentiments[2], key=lambda x: x["score"], reverse=True)[
-            : len(sentiments[0])
-        ]:
-            s["drop_row"] = True
-    shuffled_list = [s for l in sentiments for s in l]
-    random.shuffle(shuffled_list)
-    return shuffled_list
-
 class NERAccuracy:
     """
     Accuracy metric for NER tasks, measuring token-level accuracy.
