@@ -312,24 +312,24 @@ def download_data(batch_size: int = 32):
     max_length = max(length_list) + 2  # Adding 2 for [CLS] and [SEP] tokens
     print(f"Max length of tokens: {max_length}")
 
-    # # Directory to save processed batches
-    # output_dir = "./data/ner"
-    # datasets_names = ["train", "validation", "test"]
-    # for dataset_name in datasets_names:
-    #     os.makedirs(os.path.join(output_dir, dataset_name), exist_ok=True)
+    # Directory to save processed batches
+    output_dir = "./data/ner"
+    datasets_names = ["train", "validation", "test"]
+    for dataset_name in datasets_names:
+        os.makedirs(os.path.join(output_dir, dataset_name), exist_ok=True)
 
-    # # Process all splits (train/validation/test)
-    # for dataset_name in datasets_names:
-    #     process_in_batches(
-    #         conll_dataset[dataset_name],
-    #         dataset_name,
-    #         batch_size,
-    #         tokenizer,
-    #         max_length,
-    #         model,
-    #         output_dir,
-    #         task="ner",
-    #     )
+    # Process all splits (train/validation/test)
+    for dataset_name in datasets_names:
+        process_in_batches(
+            conll_dataset[dataset_name],
+            dataset_name,
+            batch_size,
+            tokenizer,
+            max_length,
+            model,
+            output_dir,
+            task="ner",
+        )
 
     # Load the original Financial Phrasebank dataset
     phrasebank = load_dataset(
