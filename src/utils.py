@@ -6,182 +6,143 @@ import numpy as np
 from torch.jit import RecursiveScriptModule
 from typing import Optional
 
-def process_in_batches(dataset_split, dataset_name, batch_size, tokenizer, max_length, model, output_dir):
-    """Processes the dataset in batches."""
-    tokens = dataset_split["tokens"]
-    labels = dataset_split["ner_tags"]
-    sentiments = dataset_split["sentiments"]
+def compute_class_weights(train_loader, num_classes):
+    class_counts = torch.zeros(num_classes, dtype=torch.long)
+    for batch in train_loader:
+        labels = batch["labels"].view(-1)
+        mask = labels != -1  # Exclude padding
+        labels = labels[mask]
+        for c in range(num_classes):
+            class_counts[c] += (labels == c).sum()
+    # Avoid division by zero
+    class_weights = 1.0 / (class_counts.float() + 1e-6)
+    class_weights = class_weights * (num_classes / class_weights.sum())  # Normalize
+    return class_weights
 
-    for i in tqdm(range(0, len(tokens), batch_size), desc=f"Processing {dataset_name} batches"):
-        batch_tokens = tokens[i:i + batch_size]
-        batch_labels = labels[i:i + batch_size]
-        batch_sentiments = sentiments[i:i + batch_size]
 
-        embeddings, padded_labels, processed_sentiments = process_batch(batch_tokens, batch_labels, batch_sentiments, tokenizer, max_length, model)
-        save_batch(dataset_name, i // batch_size, embeddings, padded_labels, processed_sentiments, output_dir)
-        
-def process_batch(batch_tokens, batch_labels, batch_sentiments, tokenizer, max_length, model):
-    """Processes a single batch of tokens and labels."""
-    # Tokenize and encode the batch
-    encoded_batch = tokenizer(
-        batch_tokens,
-        is_split_into_words=True,
-        return_tensors="pt",
-        padding="max_length",
-        truncation=True,
-        max_length=max_length,
-        add_special_tokens=True  # Add [CLS] and [SEP] tokens
-    )
-    input_ids = encoded_batch["input_ids"]
-    attention_mask = encoded_batch["attention_mask"]
+def process_in_batches(
+    dataset_split,
+    dataset_name,
+    batch_size,
+    tokenizer,
+    max_length,
+    model,
+    output_dir,
+    task="ner",
+):
+    """
+    Processes the dataset in batches for either NER or SA.
 
-    # Generate embeddings using BERT
-    with torch.no_grad():
-        outputs = model(input_ids=input_ids, attention_mask=attention_mask)
-        embeddings = outputs.last_hidden_state  # Shape: (batch_size, seq_len, hidden_size)
+    Args:
+        dataset_split: HuggingFace Dataset split or dict with data.
+        dataset_name: str, name of the split ("train", "validation", "test").
+        batch_size: int
+        tokenizer: HuggingFace tokenizer
+        max_length: int
+        model: HuggingFace model
+        output_dir: str, where to save batches
+        task: "ner" or "sa"
+    """
+    if task == "ner":
+        tokens = dataset_split["tokens"]
+        labels = dataset_split["ner_tags"]
+        num_samples = len(tokens)
+    elif task == "sa":
+        tokens = dataset_split["sentence"]
+        labels = dataset_split["label"]
+        num_samples = len(tokens)
+    else:
+        raise ValueError("Unknown task: must be 'ner' or 'sa'.")
 
-    # Convert labels to tensors and pad them to max_length
-    label_tensors = [torch.tensor(labels) for labels in batch_labels]
-    padded_labels = torch.full((len(label_tensors), max_length), -1)  # Initialize with padding value
-    for idx, label_tensor in enumerate(label_tensors):
-        padded_labels[idx, :len(label_tensor)] = label_tensor  # Copy label values
+    for i in tqdm(
+        range(0, num_samples, batch_size),
+        desc=f"Processing {dataset_name} ({task}) batches",
+    ):
+        batch_tokens = tokens[i : i + batch_size]
+        batch_labels = labels[i : i + batch_size]
+            
+        embeddings, padded_labels = process_batch(
+            batch_tokens, batch_labels, tokenizer, max_length, model, task=task
+        )
+        save_batch(
+            dataset_name,
+            i // batch_size,
+            embeddings,
+            padded_labels,
+            output_dir,
+        )
 
-    sentiments = torch.tensor(batch_sentiments)
+def process_batch(batch_inputs, batch_labels, tokenizer, max_length, model, task="ner"):
+    """
+    Unified batch processor for NER and SA.
+    """
+    if task == "ner":
+        encoded_batch = tokenizer(
+            batch_inputs,
+            is_split_into_words=True,
+            return_tensors="pt",
+            padding="max_length",
+            truncation=True,
+            max_length=max_length,
+            add_special_tokens=True,
+        )
+        input_ids = encoded_batch["input_ids"]
+        attention_mask = encoded_batch["attention_mask"]
 
-    return embeddings, padded_labels, sentiments
+        with torch.no_grad():
+            outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+            embeddings = outputs.last_hidden_state  # [batch, seq_len, emb_dim]
 
-def save_batch(dataset_name, batch_idx, embeddings, labels, sentiments, output_dir):
-    """Saves processed batch embeddings and labels to disk."""
+        # Pad labels to max_length
+        label_tensors = [torch.tensor(lbls) for lbls in batch_labels]
+        padded_labels = torch.full((len(label_tensors), max_length), -1)
+        for idx, label_tensor in enumerate(label_tensors):
+            length = min(len(label_tensor), max_length)
+            padded_labels[idx, :length] = label_tensor[:length]
+
+        return embeddings, padded_labels
+
+    elif task == "sa":
+        encoded_batch = tokenizer(
+            batch_inputs,
+            return_tensors="pt",
+            padding="max_length",
+            truncation=True,
+            max_length=max_length,
+            add_special_tokens=True,
+        )
+        input_ids = encoded_batch["input_ids"]
+        attention_mask = encoded_batch["attention_mask"]
+
+        with torch.no_grad():
+            outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+            # Extract only the [CLS] token embedding for each sentence
+            embeddings = outputs.last_hidden_state[:, 0, :]  # [batch, emb_dim]
+
+        labels = torch.tensor(batch_labels)  # [batch]
+        return embeddings, labels
+
+    else:
+        raise ValueError(f"Unknown task type: {task}")
+
+
+def save_batch(dataset_name, batch_idx, embeddings, labels, output_dir):
+    """
+    Saves processed batch embeddings and labels to disk.
+    For SA, 'sentiments' can be None.
+    """
     save_path = os.path.join(output_dir, dataset_name, f"batch_{batch_idx}.pt")
-    torch.save({
+    data = {
         "embeddings": embeddings.cpu(),
         "labels": labels.cpu(),
-        "sentiments": sentiments.cpu()
-    }, save_path)
+    }
+    torch.save(data, save_path)
+
 
 def get_max_length(dataset_split):
     """Returns the maximum length of tokens in the dataset split."""
     max_length = max(len(tokens) for tokens in dataset_split["tokens"])
     return max_length
-
-def add_sentiments(dataset_split, sentiments):
-    # Add 'sentiments' column with labels (e.g., "POSITIVE", "NEGATIVE", or "NEUTRAL")
-    labels = [result["label"] for result in sentiments]
-    # Add 'scores' column with confidence scores
-    scores = [result["score"] for result in sentiments]
-    drop_row = [result["drop_row"] for result in sentiments]
-    
-    # Add both columns to the dataset split
-    dataset_split = dataset_split.add_column("sentiments", labels)
-    dataset_split = dataset_split.add_column("scores", scores)
-    dataset_split = dataset_split.add_column("drop_row", drop_row)
-    
-    return dataset_split.filter(lambda x: not x['drop_row']).remove_columns(["drop_row"])
-
-def analyze_with_progress(sentences, sentiment_analyzer) -> list[dict]:
-
-    sentiments:list[dict] = [[], [], []]
-    for sentence in tqdm(sentences, desc="Analyzing Sentiments"):
-    # for sentence in sentences:
-        s = custom_sentiment_analysis(sentiment_analyzer, sentence)
-        s['sentence'] = sentence # Saving the original sentence in s so as to retrieve it later
-        s['drop_row'] = False
-        sentiments[s["label"]].append(s)
-        
-    # Since the dataset is imbalanced (there are more positive
-    # entries), We will eliminate part of the positive reviews,
-    # so that they are equal in number to the negative ones.
-    # (Prioritizing removing those with low score).
-    if len(sentiments[0]) > len(sentiments[2]):
-        for s in sorted(
-                    sentiments[0],
-                    key=lambda x: x['score'], 
-                    reverse=True
-                )[:len(sentiments[2])]:
-            s['drop_row'] = True
-    elif len(sentiments[0]) < len(sentiments[2]):
-        for s in sorted(
-                    sentiments[2],
-                    key=lambda x: x['score'], 
-                    reverse=True
-                )[:len(sentiments[0])]:
-            s['drop_row'] = True
-    shuffled_list = [s for l in sentiments for s in l]
-    random.shuffle(shuffled_list)
-    return shuffled_list
-
-def custom_sentiment_analysis(sentiment_analyzer, sentence, neutral_threshold=0.95):
-    result = sentiment_analyzer(sentence)[0]  # Get the prediction
-    label = result["label"]
-    score = result["score"]
-
-    # Apply threshold logic
-    if score < neutral_threshold:
-        label = 1
-    elif label == "POSITIVE":
-        label = 0
-    elif label == "NEGATIVE":
-        label = 2
-
-    return {"label": label, "score": score}
-
-def extract_sentences(dataset_split):
-    sentences = [" ".join(tokens) for tokens in dataset_split["tokens"]]
-    return sentences
-
-class MAE:
-    """
-    This class is the MAE (Mean Absolute Error) object.
-
-    Attr:
-        total_error: cumulative absolute error across all predictions.
-        total: number of total examples.
-    """
-
-    total_error: float
-    total: int
-
-    def __init__(self) -> None:
-        """
-        This is the constructor of the MeanAbsoluteError class. It initializes
-        total_error and total to zero.
-        """
-        self.total_error: float = 0.0
-        self.total: int = 0
-
-    def update(self, predictions: torch.Tensor, labels: torch.Tensor) -> None:
-        """
-        This method updates the cumulative absolute error and the total count.
-
-        Args:
-            predictions: outputs of the model. Dimensions: [batch, ...].
-            labels: ground truth values. Dimensions: [batch, ...].
-        """
-        assert (
-            predictions.shape == labels.shape
-        ), f"Shape mismatch between predictions and labels: {predictions.shape} vs {labels.shape}"
-        batch_error: float = torch.abs(predictions - labels).sum().item()
-        self.total_error += batch_error
-        self.total += labels.numel()
-
-    def compute(self) -> float:
-        """
-        This method computes and returns the Mean Absolute Error (MAE).
-
-        Returns:
-            MAE value.
-        """
-        if self.total == 0:
-            return 0.0
-        return self.total_error / self.total
-
-    def reset(self) -> None:
-        """
-        This method resets the cumulative error and total count to zero.
-        """
-        self.total_error = 0.0
-        self.total = 0
-
 
 class NERAccuracy:
     """
@@ -330,41 +291,42 @@ class EarlyStopping:
                 print("Early stopping triggered.")
             self.early_stop = True
 
+
 def save_model(model: torch.nn.Module, name: str) -> None:
     """
-    This function saves a model in the 'models' folder as a torch.jit.
-    It should create the 'models' if it doesn't already exist.
+    Save the model as a TorchScript traced model on CPU (for maximum portability).
 
     Args:
-        model: pytorch model.
-        name: name of the model (without the extension, e.g. name.pt).
+        model: PyTorch model to save.
+        name: Filename (without extension) to save the model under 'models/' folder.
     """
-
-    # create folder if it does not exist
     if not os.path.isdir("models"):
         os.makedirs("models")
 
-    # save scripted model
-    model_scripted: RecursiveScriptModule = torch.jit.script(model.cpu())
-    model_scripted.save(f"models/{name}.pt")
+    device = torch.device("cpu")
+    model = model.to(device).eval()
+    input_dim = model.encoder.input_size
+    example_input = torch.randn(1, 4, input_dim, device=device)  # (batch, seq_len, input_dim)
 
-    return None
+    traced_model = torch.jit.trace(model, example_input)
+    traced_model.save(f"models/{name}.pt")
+    print(f"Model saved as models/{name}.pt on device {device}")
 
-
-def load_model(name: str) -> RecursiveScriptModule:
+def load_model(name: str, device: torch.device = torch.device("cpu")) -> RecursiveScriptModule:
     """
-    This function is to load a model from the 'models' folder.
+    Load a TorchScript model from the 'models' folder and move it to the specified device.
 
     Args:
-        name: name of the model to load.
+        name: Filename (without extension) of the model to load.
+        device: Device to move the model to.
 
     Returns:
-        model in torchscript.
+        Loaded TorchScript model on the specified device.
     """
-
-    # define model
-    model: RecursiveScriptModule = torch.jit.load(f"models/{name}.pt")
-
+    model = torch.jit.load(f"models/{name}.pt", map_location="cpu")
+    model = model.to(device)
+    model.eval()
+    print(f"Model loaded from models/{name}.pt on device {device}")
     return model
 
 
