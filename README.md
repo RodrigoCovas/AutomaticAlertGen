@@ -3,6 +3,11 @@
 ## Proyecto Deep+NLP 
 Rodrigo Covas, Mario Alonso, Marcos Garrido 
 
+### Ejecución del Modelo
+- Ejecutar el fichero src/data.py
+- Ejecutar el fichero src/train.py
+- Ejecutar el fichero src/alerts.py
+  
 ### Componentes del Modelo 
 #### Reconocimiento de Entidades Nombradas (NER): 
 - Datasets: CoNLL-2003 y OntoNotes 5.0. 
