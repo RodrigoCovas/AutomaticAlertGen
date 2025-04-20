@@ -17,7 +17,7 @@ tokenizer = AutoTokenizer.from_pretrained(model_name)
 generator_model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
 
 NER_LABELS = {0: "O", 1: "Person", 2: "Person", 3: "Organization", 4: "Organization", 5: "Localization", 6: "Localization", 7: "O", 8: "O"}
-SA_LABELS = {0: "positivo", 1: "neutro", 2: "negativo"}
+SA_LABELS = {0: "positive", 1: "neutral", 2: "negative"}
 
 def encode_sentence(sentence):
     encoded = bert_tokenizer(sentence, return_tensors="pt", padding=True, truncation=True)
@@ -30,7 +30,7 @@ def encode_sentence(sentence):
 def predict(sentence):
     embeddings = encode_sentence(sentence)
     with torch.no_grad():
-        ner_logits, sa_logits = model(embeddings)  # Assumes output: [batch, seq_len, NER], [batch, SA]
+        ner_logits, sa_logits = model(embeddings)
     
     ner_tags = torch.argmax(ner_logits, dim=-1).squeeze(0).tolist()
     sa_class = torch.argmax(sa_logits, dim=-1).item()
@@ -46,7 +46,7 @@ def build_prompt(text, ner_decoded, sa_class):
         if i[1] != 'O':
             entities.append(i[0])
     entities_str = str(entities)
-    sentiment_str = ["positive", "neutral", "negative"][sa_class]
+    sentiment_str = SA_LABELS[sa_class]
 
     prompt = f"Generate a sentence from the statement -{text}- with {sentiment_str} sentiment, including the words: {entities_str}"
     print(prompt)
@@ -61,9 +61,9 @@ def main():
         ner_decoded = decode_ner(line, ner_tags)
         prompt = build_prompt(line, ner_decoded, sa_class)
         alert = generate_answer(prompt)
-        print(f"\nFrase {i+1}: {line}")
-        print(f"Sentimiento: {SA_LABELS[sa_class]}")
-        print("Entidades reconocidas:")
+        print(f"\nSentence {i+1}: {line}")
+        print(f"Sentiment: {SA_LABELS[sa_class]}")
+        print("Entities:")
         print(ner_decoded)
         print(alert)
 
