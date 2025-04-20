@@ -7,6 +7,30 @@ Rodrigo Covas, Mario Alonso, Marcos Garrido
 - Ejecutar el fichero src/data.py
 - Ejecutar el fichero src/train.py
 - Ejecutar el fichero src/alerts.py
+
+### Nuevos Samples
+Ejecutar el siguiente codigo, siendo "line" el nuevo sample:
+def encode_sentence(sentence):
+    encoded = bert_tokenizer(sentence, return_tensors="pt", padding=True, truncation=True)
+    input_ids = encoded["input_ids"].to(DEVICE)
+    attention_mask = encoded["attention_mask"].to(DEVICE)
+    with torch.no_grad():
+        outputs = bert_model(input_ids=input_ids, attention_mask=attention_mask)
+    return outputs.last_hidden_state
+
+def predict(sentence):
+    embeddings = encode_sentence(sentence)
+    with torch.no_grad():
+        ner_logits, sa_logits = model(embeddings)
+    
+    ner_tags = torch.argmax(ner_logits, dim=-1).squeeze(0).tolist()
+    sa_class = torch.argmax(sa_logits, dim=-1).item()
+    return ner_tags, sa_class
+    
+model = torch.jit.load("models/best_model.pt")
+model.to(DEVICE)
+model.eval()
+ner_tags, sa_class = predict(line)
   
 ### Componentes del Modelo 
 #### Reconocimiento de Entidades Nombradas (NER): 
