@@ -36,7 +36,5 @@ def main(name: str):
     sa_metrics = t_step(model, test_loader_sa, device, task="sa")
     print(f"Sentiment Analysis Test Accuracy: {sa_metrics['sentiment_acc']:.4f}")
 
-    return {"ner": ner_metrics, "sa": sa_metrics}
-
 if __name__ == "__main__":
-    metrics = main('best_model')
+    main('best_model')

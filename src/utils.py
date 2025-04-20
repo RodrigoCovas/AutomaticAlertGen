@@ -291,6 +291,7 @@ class EarlyStopping:
                 print("Early stopping triggered.")
             self.early_stop = True
 
+
 def save_model(model: torch.nn.Module, name: str) -> None:
     """
     Save the model as a TorchScript traced model on CPU (for maximum portability).
@@ -327,6 +328,7 @@ def load_model(name: str, device: torch.device = torch.device("cpu")) -> Recursi
     model.eval()
     print(f"Model loaded from models/{name}.pt on device {device}")
     return model
+
 
 def set_seed(seed: int) -> None:
     """

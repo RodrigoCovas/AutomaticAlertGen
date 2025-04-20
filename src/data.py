@@ -13,7 +13,7 @@ from torch.utils.data import Dataset, DataLoader
 class NER_Dataset(Dataset):
     def __init__(self, directory: str = "./data/ner/train", pad_batches: bool = True):
         """
-        Custom Dataset for NER and Sentiment Analysis tasks.
+        Custom Dataset for NER tasks.
 
         Args:
             directory (str): Directory containing the batch files.
@@ -249,22 +249,6 @@ def load_data(batch_size: int = 32):
     train_sa = SA_Dataset(directory="./data/sa/train")
     val_sa = SA_Dataset(directory="./data/sa/validation")
     test_sa = SA_Dataset(directory="./data/sa/test")
-
-    # Optionally, check batch sizes for consistency (NER)
-    for i, batch in enumerate(train_ner):
-        if i != 0:
-            aux_emb, aux_lab = s_emb, s_lab
-        s_emb, s_lab = batch["embeddings"].shape, batch["labels"].shape
-        if i != 0 and (s_emb != aux_emb or s_lab != aux_lab):
-            raise ValueError(f"Batch {i} has different sizes: {s_emb}, {s_lab}")
-
-    # Optionally, check batch sizes for consistency (SA)
-    for i, batch in enumerate(train_sa):
-        if i != 0:
-            aux_emb, aux_lab = s_emb, s_lab
-        s_emb, s_lab = batch["embeddings"].shape, batch["labels"].shape
-        if i != 0 and (s_emb != aux_emb or s_lab != aux_lab):
-            raise ValueError(f"SA Batch {i} has different sizes: {s_emb}, {s_lab}")
 
     # --- DataLoaders ---
     train_loader_ner = DataLoader(

@@ -29,8 +29,8 @@ def main() -> None:
     Main program for sequential NER and SA training.
     """
     # Hyperparameters
-    epochs_ner: int = 1
-    epochs_sa: int = 1
+    epochs_ner: int = 25
+    epochs_sa: int = 75
     lr_ner: float = 1e-3
     lr_sa: float = 1e-3
     batch_size: int = 64
@@ -195,8 +195,8 @@ def main() -> None:
         os.remove(best_model_path_sa)
         print(f"Deleted temporary file: {best_model_path_sa}")
 
-    save_model(model, name, device)
+    save_model(model, name)
 
 
 if __name__ == "__main__":
-    main()  
+    main()
