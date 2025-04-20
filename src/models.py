@@ -63,18 +63,6 @@ class CombinedModel(nn.Module):
         return output
 
 
-class CombinedModel(nn.Module):
-    def __init__(self, input_dim, hidden_dim, num_layers, num_ner_classes, sentiment_classes=3, bidirectional=True):
-        super(CombinedModel, self).__init__()
-        self.ner_model = NERModel(input_dim, hidden_dim, num_layers, num_ner_classes, bidirectional)
-        self.sa_model = SentimentModel(input_dim, hidden_dim, num_layers, sentiment_classes, bidirectional)
-
-    def forward(self, embeddings):
-        ner_logits = self.ner_model(embeddings)
-        sentiment_logits = self.sa_model(embeddings)
-        return ner_logits, sentiment_logits
-
-
 """class MyMultiTaskModel(torch.nn.Module):
     def __init__(self, hidden_size: int, num_layers: int, bidirectional: bool, ner_tag_size: int) -> None:
         
