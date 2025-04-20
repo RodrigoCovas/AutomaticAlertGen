@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 
-
 class CombinedModel(nn.Module):
     def __init__(
         self,
@@ -40,6 +39,8 @@ class CombinedModel(nn.Module):
         if embeddings.dim() == 2:
             # If input is (batch, input_dim), add seq_len dimension
             embeddings = embeddings.unsqueeze(1)
+        # Ensure LSTM weights are contiguous for performance
+        self.encoder.flatten_parameters()
         # embeddings: (batch, seq_len, input_dim)
         lstm_out, (h_n, _) = self.encoder(
             embeddings

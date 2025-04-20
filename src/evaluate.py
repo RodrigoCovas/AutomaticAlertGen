@@ -1,8 +1,7 @@
 import torch
-from torch.jit import RecursiveScriptModule
 from typing import Final
 from src.data import load_data
-from src.utils import set_seed
+from src.utils import set_seed, load_model
 from src.train_functions import t_step
 
 # static variables
@@ -26,8 +25,8 @@ def main(name: str):
         test_loader_sa,
     ) = load_data()
 
-    # Load the model
-    model: RecursiveScriptModule = torch.jit.load(f"models/{name}.pt").to(device)
+    # Load the model using the new load_model function
+    model = load_model(name, device)
 
     # Evaluate NER
     ner_metrics = t_step(model, test_loader_ner, device, task="ner")

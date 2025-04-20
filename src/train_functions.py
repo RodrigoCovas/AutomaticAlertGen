@@ -119,6 +119,8 @@ def t_step(
     model.eval()
     for i, batch in enumerate(test_data):
         inputs = batch["embeddings"].to(torch.float32).to(device)
+        if inputs.dim() == 2:
+            inputs = inputs.unsqueeze(1)  # Now [batch, 1, emb_dim]
         if task == "ner":
             ner_tags = batch["labels"].long().to(device)
             ner_predictions, _ = model(inputs)

@@ -6,6 +6,19 @@ import numpy as np
 from torch.jit import RecursiveScriptModule
 from typing import Optional
 
+def compute_class_weights(train_loader, num_classes):
+    class_counts = torch.zeros(num_classes, dtype=torch.long)
+    for batch in train_loader:
+        labels = batch["labels"].view(-1)
+        mask = labels != -1  # Exclude padding
+        labels = labels[mask]
+        for c in range(num_classes):
+            class_counts[c] += (labels == c).sum()
+    # Avoid division by zero
+    class_weights = 1.0 / (class_counts.float() + 1e-6)
+    class_weights = class_weights * (num_classes / class_weights.sum())  # Normalize
+    return class_weights
+
 
 def process_in_batches(
     dataset_split,
@@ -278,44 +291,42 @@ class EarlyStopping:
                 print("Early stopping triggered.")
             self.early_stop = True
 
-
 def save_model(model: torch.nn.Module, name: str) -> None:
     """
-    This function saves a model in the 'models' folder as a torch.jit.
-    It should create the 'models' if it doesn't already exist.
+    Save the model as a TorchScript traced model on CPU (for maximum portability).
 
     Args:
-        model: pytorch model.
-        name: name of the model (without the extension, e.g. name.pt).
+        model: PyTorch model to save.
+        name: Filename (without extension) to save the model under 'models/' folder.
     """
-
-    # create folder if it does not exist
     if not os.path.isdir("models"):
         os.makedirs("models")
 
-    # save scripted model
-    model_scripted: RecursiveScriptModule = torch.jit.script(model.cpu())
-    model_scripted.save(f"models/{name}.pt")
+    device = torch.device("cpu")
+    model = model.to(device).eval()
+    input_dim = model.encoder.input_size
+    example_input = torch.randn(1, 4, input_dim, device=device)  # (batch, seq_len, input_dim)
 
-    return None
+    traced_model = torch.jit.trace(model, example_input)
+    traced_model.save(f"models/{name}.pt")
+    print(f"Model saved as models/{name}.pt on device {device}")
 
-
-def load_model(name: str) -> RecursiveScriptModule:
+def load_model(name: str, device: torch.device = torch.device("cpu")) -> RecursiveScriptModule:
     """
-    This function is to load a model from the 'models' folder.
+    Load a TorchScript model from the 'models' folder and move it to the specified device.
 
     Args:
-        name: name of the model to load.
+        name: Filename (without extension) of the model to load.
+        device: Device to move the model to.
 
     Returns:
-        model in torchscript.
+        Loaded TorchScript model on the specified device.
     """
-
-    # define model
-    model: RecursiveScriptModule = torch.jit.load(f"models/{name}.pt")
-
+    model = torch.jit.load(f"models/{name}.pt", map_location="cpu")
+    model = model.to(device)
+    model.eval()
+    print(f"Model loaded from models/{name}.pt on device {device}")
     return model
-
 
 def set_seed(seed: int) -> None:
     """
